@@ -1,7 +1,3 @@
-#TODO:  
-#           - provare con dati veri, Ochhio ai file zippati, implementa
-#           - fai notebook documentation
-
 import argparse
 import os
 import numpy as np
