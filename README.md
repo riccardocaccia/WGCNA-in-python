@@ -27,8 +27,7 @@ Install dependencies via `pip`:
 ```bash
 pip install polars pandas numpy matplotlib seaborn networkx scipy gseapy plotly
 ```
-##Author
-
+## Author
 [Riccardo Caccia](https://github.com/riccardocaccia)
 
 
