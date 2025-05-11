@@ -60,7 +60,6 @@ def subset_high_variance_genes(df: pl.DataFrame, top_n: int):
     
     numeric_cols = df.columns[1:]
 
-    #mean and sum of squares to calculate var
     df = df.with_columns([                                                    
         pl.mean_horizontal([pl.col(c) for c in numeric_cols]).alias('mean_expr'),
         pl.sum_horizontal([(pl.col(c) ** 2) for c in numeric_cols]).alias('sum_squares')
@@ -68,7 +67,6 @@ def subset_high_variance_genes(df: pl.DataFrame, top_n: int):
 
     n = len(numeric_cols)
 
-    #variance
     df = df.with_columns(
         ((pl.col('sum_squares') / n) - (pl.col('mean_expr') ** 2)).alias('row_var') 
     )
@@ -77,7 +75,6 @@ def subset_high_variance_genes(df: pl.DataFrame, top_n: int):
     if top_genes.is_empty():
         raise ValueError("No genes selected after variance filtering.")
     
-    #returning the df without the temporary columns
     return top_genes.drop(["mean_expr", "sum_squares", "row_var"])
 
 def remove_least_expressed_genes(expression_dataset: pl.DataFrame, expression_threshold: float):
@@ -92,9 +89,9 @@ def remove_least_expressed_genes(expression_dataset: pl.DataFrame, expression_th
 
 def _correlate_chunk(args):
     '''private function for chunk'''
-    data, method, start, end = args  #numpyarray, method and chunck size = args
+    data, method, start, end = args  
     result = []
-    for i in range(start, end):  #each i is a gene
+    for i in range(start, end): 
         row_i = data[i]
         row_corr = []
         for j in range(len(data)):
@@ -122,7 +119,6 @@ def parallel_correlation(df: pd.DataFrame, method: str, n_processes: int):
         for i in range(0, n_genes, chunk_size)
     ]
     
-    #call of the private function
     with mp.Pool(processes=n_processes or mp.cpu_count()) as pool:
         chunks = pool.map(_correlate_chunk, args)
     
@@ -156,15 +152,15 @@ def dendrogram_plot(correlation_matrix, basename_obj: AbsolutePath, output_dir):
     '''Create an interactive dendrogram using Plotly and save as HTML'''
     print('drawing a dendrogram...')
     distance_matrix = 1 - correlation_matrix
-    distance_matrix = (distance_matrix + distance_matrix.T) / 2  #symmetry
-    np.fill_diagonal(distance_matrix.values, 0)  # ensure zero diagonal
+    distance_matrix = (distance_matrix + distance_matrix.T) / 2  
+    np.fill_diagonal(distance_matrix.values, 0)  
     condensed = squareform(distance_matrix.values)
     Z = linkage(condensed, method='average')
 
     fig = ff.create_dendrogram(
         distance_matrix.values,
         labels=correlation_matrix.columns.tolist(),
-        linkagefun=lambda _: Z  # Already computed
+        linkagefun=lambda _: Z  
     )
 
     fig.update_layout(
@@ -232,7 +228,7 @@ def save_cytoscape_format(
     clustering: dict):
     '''save a graphml file with centrality metrics for Cytoscape'''
     print('Saving file for Cytoscape analysis...')
-    # centrality metrics as node attributes
+    
     for node in network.nodes():
         network.nodes[node]['degree_centrality'] = round(degree_centrality.get(node, 0), 2)
         network.nodes[node]['closeness_centrality'] = round(closeness_centrality.get(node, 0), 2)
@@ -245,7 +241,7 @@ def save_cytoscape_format(
 
 def get_gene_clusters(G):
     '''get gene clusters'''
-    return [list(c) for c in community.louvain_communities(G)]  #list of list for cluster
+    return [list(c) for c in community.louvain_communities(G)]  
 
 def run_go_enrichment(gene_list, output_dir, cluster_id):
     '''conduct a GO enrichment'''
@@ -265,7 +261,6 @@ def go_enrichment_all_clusters(G, output_dir):
     for i, gene_list in enumerate(clusters):
         run_go_enrichment(gene_list, output_dir, i)
 
-#TODO: normalize ??
 def get_args():
     '''parser arguments'''
     parser = argparse.ArgumentParser()
@@ -288,45 +283,35 @@ def get_args():
     return parser.parse_args()
 
 def main():
-    #parser
     args = get_args()
     
-    #path for the esperiment
     basename = AbsolutePath(os.path.splitext(os.path.basename(args.expression_file))[0])
     output_folder = basename.output_dir
 
     print('starting analysis...')
 
-    #write dataframe into csv
     expression_dataset = load_expression_data(args.expression_file, basename, output_folder)
     expression_dataset = remove_least_expressed_genes(expression_dataset, args.expression_threshold)
     expression_dataset = subset_high_variance_genes(expression_dataset, args.top_genes)
     expression_dataset.write_csv(os.path.join(output_folder, f'{basename.basename}_filtered_expression.csv'))
 
-    #correlation matrix
     correlation_matrix = parallel_correlation(expression_dataset.to_pandas(), 
                                               method=args.method, n_processes=args.n_processes).round(2)
     correlation_matrix.to_csv(os.path.join(output_folder, f'{basename.basename}_correlation_matrix.csv'), 
                               float_format="%.2f")
-    ##Check
-    if correlation_matrix.isnull().all().all(): #2 all for the 2D 
+    if correlation_matrix.isnull().all().all(): 
         raise ValueError("Only NAN")
-
-    #graph
+        
     correlation_heatmap(correlation_matrix, basename, output_folder)
     dendrogram_plot(correlation_matrix, basename, output_folder)
 
-    #network se non è vuoto il tutto 
     network = build_network(correlation_matrix, args.correlation_threshold)
     if network:
         degree, closness, eigen, cluster = centrality_analysis(network, basename, output_folder)
 
-        #cytoscape file
         if args.cytoscape_file.lower() in ['yes', 'y']:
             save_cytoscape_format(network, basename, output_folder, degree, closness, eigen, cluster)
 
-
-        #GO enrichment
         if args.go_enrichment.lower() in ['yes', 'y']:
             go_enrichment_all_clusters(network, output_folder)
 
